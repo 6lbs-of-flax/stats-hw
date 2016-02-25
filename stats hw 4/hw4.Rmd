@@ -1,0 +1,113 @@
+---
+title: "hw4"
+author: "Gordon Titman"
+date: "February 24, 2016"
+output: html_document
+---
+
+```{r include=FALSE}
+library(mosaic)
+shocks <- read.csv("shocks.csv")
+predimed <- read.csv("predimed.csv")
+ut <- read.csv("ut2000.csv")
+```
+
+1a. In order to calculate a 95% confidence interval of the mean difference in SAT math scores between the liberal arts school and the architecture school I first took the mean of a bootstrapped sample (sample with replacement) for each school. Then I subtracted the liberal arts bootstapped mean from that of the architecture school. I wanted a nice positive number and I was guessing that the architecture SAT scores would be higher most ofthe time if not all of the time. This gave me one difference between two means. So I then repeated this process 1000 times to get a distribution of possible means, and the bootstrapping process gave the distribution variation that allowed us to see different possibilities of what the real population difference in means actually is. The 95% confidence interval spans from 68.00719 to 106.96098 and is centered around 87.56937.
+
+```{r echo=FALSE}
+libarts <- filter(ut, School=="LIBERAL ARTS")
+arch <- filter(ut, School=="ARCHITECTURE")
+boot.diff <- do(1000)*{
+  bs_sample.lib= resample(libarts)
+  bs_sample.arch= resample(arch)
+  mean(bs_sample.arch$SAT.Q)-mean(bs_sample.lib$SAT.Q)
+}
+ninetyfive.ci=ifelse(boot.diff$result>68.00719&boot.diff$result<106.96098,'inside', 'outside')
+qplot(x=result, data=boot.diff, fill=ninetyfive.ci, binwidth=2)
+qdata(boot.diff$result, p=c(.025, .5, .975))
+```
+
+1.b The coefficient for SAT.C is .001343 and its standard error is .000043. Therefore the 95% confidence interval for the slope of the SAT score is from .001257 to .001429.
+```{r include=FALSE}
+lm.gpa <- lm(GPA~SAT.C+School, data = ut)
+summary(lm.gpa)
+```
+
+1.C Bootstrapping is a way to simulate variation in the data when we have a limited sample size. It allows us to make a better estimate of what the overall population from which we pull sample actually looks like. It works by taking a new sample from a pre-existing sample. The original sample and the new sample are the same size, so variation is gained by taking a sample with replacement, or by allowing observations to be taken from the original sample and put in the new sample multiple times. It is a bit like saying we know allof these observations are represented in the true population but we do not know by what proportion, so let's randomize for frequency and see how the sample might change.
+
+2.
+a.When a regression is run on the expensive test with respect to the cheap test we get a multiple r squared value of .9344. Therefore we can say that more than 90% of the variation in the expensive test can be predicted by the cheap test, and thus the company should use the cheap test.
+
+```{r echo=FALSE}
+lmshock <- lm(shocks$expensive~shocks$cheap)
+summary(lmshock)
+```
+
+b. In order to get an accurate prediction interval for my data I ran a simulation 100,000 times. First I bootstrapped my sample of expensive and cheap tests. Then, ran a regression on the expensive tests with respect to the cheap tests from the bootstrapped sample, then repeated this 100,000 times. 
+
+
+
+```{r include=FALSE}
+boot.shock= do(100000)*{
+  bootsamp.shock= resample(shocks)
+  lm.bootshock= lm(expensive~cheap, data = bootsamp.shock)
+  lm.bootshock
+  
+}
+
+xstar = data.frame(cheap= seq(500,600,by=10))
+m = nrow(xstar) 
+NMC = 100000
+boot_pred = do(NMC)*{
+	
+	yhat = predict.lm(lm.bootshock,newdata=xstar)
+	eps = sample(resid(lm.bootshock), size=m, replace=TRUE)
+	ystar = yhat+eps
+	ystar
+}
+
+```
+
+Below I show the distribution of the  slope with 95% confidence interval. As you can see the slope is around 1 with a mean of .98 and a confidence interval that goes from .887 to 1.076.
+
+```{r echo=FALSE}
+mean(boot.shock$cheap)
+confint(boot.shock$cheap, level = .95)
+ninetyfive.CI=ifelse(boot.shock$cheap>.886539&boot.shock$cheap<1.076059, '.88-1.07', 'alpha')
+qplot(x=cheap, data=boot.shock, fill=ninetyfive.CI)
+```
+
+The average standard error for the bootstrapped regressions was 7.53, which would give us a width of about 30 units of rebound for our confidence interval.
+Below I have shown a 95% prediction interval for ystar(the predicted values of the expensive test) at the xstar(new input values) values of 510, 550, and 590, respectively. As you can see, each confidence interval is just under 33 units in width.
+
+```{r echo=FALSE}
+confint(boot_pred$X2, level = .95)
+confint(boot_pred$X6, level = .95)
+confint(boot_pred$X10, level = .95)
+```
+
+Conclusion: In light of the data, I believe that the company shoud use the cheap test. With very strict guidelines placed in the second test the cheap test still passes. We have been able to bake uncertainty into every parameter of the prediction interval using the bootstrapped prediction interval method. Our new results have passed the test with its interval at every point.
+
+3.
+If the probability that a cardiac event occuring was completely random with respect to which group a participant in the study was placed in then the probability that an event occurred given a participant was in a certain group should be equal for each group. Looking at a probability table this does not appear to be the case. The control group seems to have a slightly higher rate of cardiac event occurrence, and the MedDiet+Nuts seems to have the lowest rates. 
+
+```{r echo=FALSE}
+event.tab <- xtabs(~event+group, data = predimed)
+prop.table(event.tab,margin = 2)
+```
+
+But what is the probability that this simply occurs due to random chance? Our null hypothesis is that P(Yes|Control)=P(Yes|MedDiet+Nuts)=P(Yes|MedDiet+VOO), yes meaning yes a cardiac event did occur. In order to test this I randomize the groups and see what the probability of an event occurring is given which group the participant is in if the grouping is random. I repeat this 1000 times in order to create a random distribution. I then can find what the confidence interval for what the difference in cardiac event rate would be if the grouping was just random. Although you see 3 different confidence intervals you should notice that they are all about the same. This makes sense since there should be no difference between the groups if they are randomized.
+
+```{r echo=FALSE}
+permtest1 = do(10000)*{
+  t1_shuffle = xtabs(~event+shuffle(group), data=predimed)
+  prop.table(t1_shuffle,margin = 2)[2, 1:3]
+}
+  confint(permtest1$Control-permtest1[,2], .95)
+  confint(permtest1[,2]-permtest1[,3],.95)
+  confint(permtest1[,3]-permtest1[,1], .95)
+  prop.table(event.tab, margin=2)
+
+```
+
+According to this method we can reject our null hypothesis with 95% confidence if the difference between groups is about .012. Therefore we can reject our null with respect to the medDiet+Nuts and the Control, stating that there is a significant difference between cardiac event rates between the two groups. However, MedDiet+VOO being within a .012 range of both the other groups makes it hard to reject the null with respect to this group and accept the alternative that there is a significant difference between this group and the control or between this group and the Nuts diet. This is a bit confusing since you might think these results are transitive, meaning one might think that if there is no significant difference between 1 and 2 and between 2 and 3 that there should be no significant difference between 1 and 3. But, in order to be 95% confident this cannot be said to be the case. Still, you are probably better off on the MedDiet + VOO than in the control even if this cannot be said with 95% confidence.
